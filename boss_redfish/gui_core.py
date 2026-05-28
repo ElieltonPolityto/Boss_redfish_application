@@ -7,6 +7,28 @@ from .client import build_reading_summary
 from .template import build_sensor_definitions
 
 
+MIN_POLLING_MS = 250
+RECOMMENDED_POLLING_MS = 500
+DEFAULT_POLLING_MS = 1000
+
+
+def parse_polling_ms(value: str) -> int:
+    text = str(value).strip()
+    if not text:
+        raise ValueError("Polling time must be an integer in ms.")
+    try:
+        polling_ms = int(text)
+    except ValueError as exc:
+        raise ValueError("Polling time must be an integer in ms.") from exc
+    if polling_ms < MIN_POLLING_MS:
+        raise ValueError(f"Polling time must be at least {MIN_POLLING_MS} ms.")
+    return polling_ms
+
+
+def polling_is_below_recommended(polling_ms: int) -> bool:
+    return polling_ms < RECOMMENDED_POLLING_MS
+
+
 def select_variables_by_code(
     catalog: AcquiredpCatalog,
     device: Device | None,

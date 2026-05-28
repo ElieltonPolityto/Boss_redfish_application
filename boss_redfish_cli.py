@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import getpass
 import json
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 from boss_redfish import (
     DEFAULT_CHASSIS_ID,
@@ -19,6 +22,7 @@ from boss_redfish import (
     create_template_archive,
 )
 from boss_redfish.acquiredp import filter_variables, parse_acquiredp
+from boss_redfish.gui_core import parse_polling_ms
 from boss_redfish.template import create_generic_template_archive
 from boss_redfish.wizard import run_diagnose, run_wizard
 
@@ -30,6 +34,40 @@ def print_summary(summary: dict[str, str]) -> None:
     width = max([len(name) for name in summary] + [8])
     for name, value in summary.items():
         print(f"{name:<{width}} : {value}")
+
+
+def read_redfish_values(
+    client: RedfishClient,
+    chassis_id: str,
+    sensor_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if sensor_ids:
+        return client.read_sensors(chassis_id, sensor_ids)
+    return client.read_sensor_collection(chassis_id)
+
+
+def timestamp_ms() -> str:
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+
+def print_polling_result(readings: dict[str, dict[str, Any]], elapsed_ms: int, *, json_output: bool) -> None:
+    timestamp = timestamp_ms()
+    if json_output:
+        print(
+            json.dumps(
+                {
+                    "timestamp": timestamp,
+                    "elapsed_ms": elapsed_ms,
+                    "readings": readings,
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+        return
+
+    for name, value in build_reading_summary(readings).items():
+        print(f"{timestamp} | {name} | {value} | {elapsed_ms} ms | OK", flush=True)
 
 
 def command_template(args: argparse.Namespace) -> int:
@@ -74,6 +112,10 @@ def command_template_from_selection(args: argparse.Namespace) -> int:
 
 
 def command_read(args: argparse.Namespace) -> int:
+    polling_ms = parse_polling_ms(args.polling_ms) if args.watch else 0
+    if args.count < 0:
+        raise ValueError("--count must be zero or greater")
+
     password = args.password or getpass.getpass("Senha Redfish: ")
     client = RedfishClient(
         base_url=args.boss,
@@ -82,10 +124,32 @@ def command_read(args: argparse.Namespace) -> int:
         verify_tls=not args.insecure,
         timeout=args.timeout,
     )
-    if args.sensor:
-        readings = client.read_sensors(args.chassis_id, args.sensor)
-    else:
-        readings = client.read_sensor_collection(args.chassis_id)
+
+    if args.watch:
+        if not args.json:
+            print(f"Polling Redfish every {polling_ms} ms. Press Ctrl+C to stop.", flush=True)
+        cycles = 0
+        try:
+            while True:
+                started = time.monotonic()
+                readings = read_redfish_values(client, args.chassis_id, args.sensor)
+                elapsed_s = time.monotonic() - started
+                elapsed_ms = max(0, round(elapsed_s * 1000))
+                print_polling_result(readings, elapsed_ms, json_output=args.json)
+
+                cycles += 1
+                if args.count and cycles >= args.count:
+                    break
+
+                sleep_s = max(0.0, (polling_ms / 1000.0) - elapsed_s)
+                if sleep_s:
+                    time.sleep(sleep_s)
+        except KeyboardInterrupt:
+            if not args.json:
+                print("Polling stopped.", flush=True)
+        return 0
+
+    readings = read_redfish_values(client, args.chassis_id, args.sensor)
     if args.json:
         print(json.dumps(readings, indent=2, ensure_ascii=False))
     else:
@@ -139,6 +203,9 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--timeout", type=float, default=15.0)
     read.add_argument("--insecure", action="store_true", help="disable TLS certificate verification")
     read.add_argument("--json", action="store_true", help="print full Redfish JSON")
+    read.add_argument("--watch", action="store_true", help="repeat readings until Ctrl+C or --count is reached")
+    read.add_argument("--polling-ms", default="1000", help="polling interval in milliseconds; minimum 250")
+    read.add_argument("--count", type=int, default=0, help="number of polling cycles; 0 means forever")
     read.set_defaults(func=command_read)
 
     return parser

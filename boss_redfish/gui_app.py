@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import threading
+import time
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .acquiredp import AcquiredpCatalog, Device, Variable, filter_devices, filter_variables, parse_acquiredp
 from .client import RedfishClient
 from .discovery import BossUrls, diagnose_boss, fetch_text, normalize_boss_urls
-from .gui_core import reading_table_rows, template_preview_rows
+from .gui_core import (
+    DEFAULT_POLLING_MS,
+    parse_polling_ms,
+    polling_is_below_recommended,
+    reading_table_rows,
+    template_preview_rows,
+)
 from .template import build_sensor_definitions, chassis_id_for_device, create_generic_template_archive
 from .web_import import manual_import_steps
 
@@ -30,6 +38,10 @@ class RedfishWizardApp(tk.Tk):
         self.visible_variables: list[Variable] = []
         self.selected_variables: list[Variable] = []
         self.generated_zip: Path | None = None
+        self._polling_active = False
+        self._polling_inflight = False
+        self._polling_after_id: str | None = None
+        self._polling_client: RedfishClient | None = None
 
         self.boss_url_var = tk.StringVar(value="")
         self.web_user_var = tk.StringVar(value="")
@@ -37,6 +49,8 @@ class RedfishWizardApp(tk.Tk):
         self.device_filter_var = tk.StringVar(value="7")
         self.variable_filter_var = tk.StringVar(value="temp")
         self.output_zip_var = tk.StringVar(value=str(Path("dist") / "redfish_template_gui.zip"))
+        self.polling_ms_var = tk.StringVar(value=str(DEFAULT_POLLING_MS))
+        self.polling_status_var = tk.StringVar(value="Polling parado.")
         self.status_var = tk.StringVar(value="Pronto.")
 
         self._build_style()
@@ -214,12 +228,27 @@ class RedfishWizardApp(tk.Tk):
         ttk.Button(actions, text="Ler variaveis selecionadas", style="Action.TButton", command=self.read_selected_values).pack(
             side=tk.LEFT
         )
+        ttk.Button(actions, text="Iniciar polling", style="Action.TButton", command=self.start_polling).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Parar", command=self.stop_polling).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Label(actions, text="Polling time").pack(side=tk.LEFT, padx=(18, 4))
+        ttk.Entry(actions, textvariable=self.polling_ms_var, width=8).pack(side=tk.LEFT)
+        ttk.Label(actions, text="ms").pack(side=tk.LEFT, padx=(4, 12))
+        ttk.Label(actions, textvariable=self.polling_status_var).pack(side=tk.LEFT)
 
-        self.readings_tree = ttk.Treeview(self.reading_tab, columns=("name", "value"), show="headings", height=14)
+        self.readings_tree = ttk.Treeview(
+            self.reading_tab,
+            columns=("name", "value", "updated", "elapsed"),
+            show="headings",
+            height=14,
+        )
         self.readings_tree.heading("name", text="Variavel")
         self.readings_tree.heading("value", text="Valor")
+        self.readings_tree.heading("updated", text="Atualizado em")
+        self.readings_tree.heading("elapsed", text="Tempo req.")
         self.readings_tree.column("name", width=340)
         self.readings_tree.column("value", width=220)
+        self.readings_tree.column("updated", width=140)
+        self.readings_tree.column("elapsed", width=100)
         self.readings_tree.grid(row=1, column=0, sticky=tk.NSEW, pady=8)
 
         ttk.Label(self.reading_tab, text="Log", style="Section.TLabel").grid(row=2, column=0, sticky=tk.W)
@@ -424,18 +453,111 @@ class RedfishWizardApp(tk.Tk):
                 verify_tls=False,
                 timeout=20,
             )
-            return client.read_sensors(chassis_id, sensor_ids)
+            started = time.monotonic()
+            readings = client.read_sensors(chassis_id, sensor_ids)
+            elapsed_ms = max(0, round((time.monotonic() - started) * 1000))
+            return readings, elapsed_ms
 
-        def done(readings) -> None:
-            for item in self.readings_tree.get_children():
-                self.readings_tree.delete(item)
-            for name, value in reading_table_rows(readings):
-                self.readings_tree.insert("", tk.END, values=(name, value))
-            self._append_text(self.read_log, f"Leitura concluida: {chassis_id} / {', '.join(sensor_ids)}")
-            self.notebook.select(self.reading_tab)
+        def done(result) -> None:
+            readings, elapsed_ms = result
+            self._show_readings(readings, elapsed_ms)
+            self._append_text(self.read_log, f"Leitura concluida: {chassis_id} / {', '.join(sensor_ids)} ({elapsed_ms} ms)")
             self._set_status("Leitura concluida.")
 
         self._run_async("Lendo Redfish...", worker, done)
+
+    def _show_readings(self, readings, elapsed_ms: int, *, select_tab: bool = True) -> None:
+        updated_at = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        for item in self.readings_tree.get_children():
+            self.readings_tree.delete(item)
+        for name, value in reading_table_rows(readings):
+            self.readings_tree.insert("", tk.END, values=(name, value, updated_at, f"{elapsed_ms} ms"))
+        if select_tab:
+            self.notebook.select(self.reading_tab)
+
+    def start_polling(self) -> None:
+        sensor_ids = self._selected_sensor_ids()
+        if not sensor_ids:
+            self._show_error("Nenhum sensor selecionado para polling.")
+            return
+        password = self.redfish_password_var.get()
+        if not password:
+            self._show_error("Informe a senha Redfish admin na aba Conexao.")
+            return
+        try:
+            polling_ms = parse_polling_ms(self.polling_ms_var.get())
+        except ValueError as exc:
+            self._show_error(str(exc))
+            return
+        if self._polling_active:
+            self._set_status("Polling ja esta ativo.")
+            return
+
+        chassis_id = self._selected_chassis_id()
+        self._polling_client = RedfishClient(
+            base_url=self._redfish_base_url(),
+            username="admin",
+            password=password,
+            verify_tls=False,
+            timeout=20,
+        )
+        self._polling_active = True
+        self._polling_inflight = False
+        self.polling_status_var.set(f"Polling ativo: {polling_ms} ms")
+        self._set_status(f"Polling ativo: {polling_ms} ms")
+        if polling_is_below_recommended(polling_ms):
+            self._append_text(self.read_log, "Aviso: polling abaixo de 500 ms pode aumentar a carga no BOSS.")
+        self._append_text(self.read_log, f"Polling iniciado: {chassis_id} / {', '.join(sensor_ids)}")
+        self._poll_values(chassis_id, sensor_ids, polling_ms)
+
+    def stop_polling(self) -> None:
+        self._polling_active = False
+        self._polling_inflight = False
+        self._polling_client = None
+        if self._polling_after_id is not None:
+            self.after_cancel(self._polling_after_id)
+            self._polling_after_id = None
+        self.polling_status_var.set("Polling parado.")
+        self._set_status("Polling parado.")
+
+    def _poll_values(self, chassis_id: str, sensor_ids: list[str], polling_ms: int) -> None:
+        if not self._polling_active or self._polling_inflight or self._polling_client is None:
+            return
+        client = self._polling_client
+        self._polling_after_id = None
+        self._polling_inflight = True
+        self.polling_status_var.set("Polling em andamento...")
+
+        def target() -> None:
+            started = time.monotonic()
+            try:
+                readings = client.read_sensors(chassis_id, sensor_ids)
+                elapsed_ms = max(0, round((time.monotonic() - started) * 1000))
+            except Exception as exc:  # noqa: BLE001 - shown to operator
+                message = str(exc)
+                self.after(0, lambda: self._poll_failed(message))
+                return
+            self.after(0, lambda: self._poll_done(chassis_id, sensor_ids, polling_ms, readings, elapsed_ms))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def _poll_done(self, chassis_id: str, sensor_ids: list[str], polling_ms: int, readings, elapsed_ms: int) -> None:
+        self._polling_inflight = False
+        self._show_readings(readings, elapsed_ms, select_tab=False)
+        self._append_text(self.read_log, f"Polling OK: {chassis_id} / {', '.join(sensor_ids)} ({elapsed_ms} ms)")
+        if not self._polling_active:
+            self.polling_status_var.set("Polling parado.")
+            return
+        self.polling_status_var.set(f"Polling ativo: {polling_ms} ms")
+        delay_ms = max(0, polling_ms - elapsed_ms)
+        self._polling_after_id = self.after(delay_ms, lambda: self._poll_values(chassis_id, sensor_ids, polling_ms))
+
+    def _poll_failed(self, message: str) -> None:
+        self._polling_active = False
+        self._polling_inflight = False
+        self._polling_client = None
+        self.polling_status_var.set("Polling parado por erro.")
+        self._show_error(message)
 
 
 def main() -> int:

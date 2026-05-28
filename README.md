@@ -204,7 +204,7 @@ The GUI is organized into four tabs:
 | `1. Conexao` | Enter BOSS URL, optional web user, Redfish admin password, and run diagnostics. |
 | `2. Controlador` | Filter and select controllers from `acquiredp`; filter and select variables. |
 | `3. Template` | Preview Redfish IDs/placeholders, choose the ZIP output path, generate the template, and show manual import instructions. |
-| `4. Leitura` | Log in to Redfish and read the selected variables after the template has been imported and the service restarted. |
+| `4. Leitura` | Log in to Redfish, read the selected variables once, or keep polling them at a user-defined interval in milliseconds. |
 
 ### Run On Windows
 
@@ -255,6 +255,20 @@ Read a published sensor:
 ```powershell
 python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID
 ```
+
+Poll a published sensor every 500 ms until stopped with `Ctrl+C`:
+
+```powershell
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500
+```
+
+Poll a sensor a fixed number of times, useful for tests or quick checks:
+
+```powershell
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500 --count 10
+```
+
+`--polling-ms` uses milliseconds. The application accepts 250 ms or higher, but 500 ms or higher is recommended to avoid unnecessary load on BOSS.
 
 ### Operational Flow
 
@@ -493,7 +507,7 @@ A GUI e organizada em quatro abas:
 | `1. Conexao` | Informar URL do BOSS, usuario web opcional, senha Redfish admin e executar diagnostico. |
 | `2. Controlador` | Filtrar e escolher controladores do `acquiredp`; filtrar e escolher variaveis. |
 | `3. Template` | Conferir IDs Redfish/placeholders, escolher destino do ZIP, gerar template e ver instrucoes de importacao manual. |
-| `4. Leitura` | Fazer login no Redfish e ler as variaveis selecionadas depois que o template foi importado e o servico reiniciado. |
+| `4. Leitura` | Fazer login no Redfish, ler as variaveis selecionadas uma vez ou manter polling com intervalo definido pelo usuario em milissegundos. |
 
 ### Rodar No Windows
 
@@ -544,6 +558,20 @@ Ler um sensor publicado:
 ```powershell
 python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR
 ```
+
+Fazer polling de um sensor publicado a cada 500 ms ate parar com `Ctrl+C`:
+
+```powershell
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500
+```
+
+Fazer polling por uma quantidade fixa de ciclos, util para testes rapidos:
+
+```powershell
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500 --count 10
+```
+
+`--polling-ms` usa milissegundos. A aplicacao aceita 250 ms ou mais, mas 500 ms ou mais e recomendado para evitar carga desnecessaria no BOSS.
 
 ### Fluxo Operacional
 
