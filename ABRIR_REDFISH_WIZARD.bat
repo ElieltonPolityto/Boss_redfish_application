@@ -13,7 +13,7 @@ echo.
 
 call :find_python
 if not defined PYTHON_CMD (
-  echo Python com tkinter nao encontrado.
+  echo Python with tkinter was not found.
   call :install_python
   if errorlevel 1 goto :fatal
   call :find_python
@@ -21,22 +21,22 @@ if not defined PYTHON_CMD (
 
 if not defined PYTHON_CMD (
   echo.
-  echo [ERRO] Nao foi possivel localizar um Python valido apos a instalacao.
-  echo Instale manualmente Python 3.12 ou superior em https://www.python.org/downloads/windows/
-  echo Marque a opcao "Add python.exe to PATH" durante a instalacao.
+  echo [ERROR] A valid Python installation could not be found after installation.
+  echo Install Python 3.12 or newer manually from https://www.python.org/downloads/windows/
+  echo Select "Add python.exe to PATH" during installation.
   goto :fatal
 )
 
 %PYTHON_CMD% -c "import boss_redfish.gui_app" >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo [ERRO] Python foi encontrado, mas a aplicacao nao carregou corretamente.
-  echo Confira se esta pasta esta completa e se o arquivo boss_redfish_wizard.py existe.
+  echo [ERROR] Python was found, but the application could not be loaded.
+  echo Check that this folder is complete and that boss_redfish_wizard.py exists.
   goto :fatal
 )
 
-echo [OK] Python e dependencias basicas encontrados.
-echo [OK] Iniciando interface grafica.
+echo [OK] Python and basic dependencies found.
+echo [OK] Starting graphical interface.
 echo.
 
 if "%BOSS_REDFISH_BOOTSTRAP_ONLY%"=="1" exit /b 0
@@ -76,28 +76,28 @@ exit /b 0
 where winget >nul 2>nul
 if errorlevel 1 (
   echo.
-  echo [ERRO] O instalador automatico precisa do winget, mas ele nao foi encontrado.
-  echo Instale manualmente Python 3.12 ou superior em https://www.python.org/downloads/windows/
-  echo Marque a opcao "Add python.exe to PATH" durante a instalacao.
+  echo [ERROR] Automatic installation requires winget, but winget was not found.
+  echo Install Python 3.12 or newer manually from https://www.python.org/downloads/windows/
+  echo Select "Add python.exe to PATH" during installation.
   exit /b 1
 )
 
 echo.
-echo Instalando Python 3.12 via winget...
-echo Pode aparecer uma tela de permissao do Windows.
+echo Installing Python 3.12 through winget...
+echo A Windows permission prompt may appear.
 winget install --id Python.Python.3.12 -e --source winget --accept-package-agreements --accept-source-agreements
 if errorlevel 1 (
   echo.
-  echo [ERRO] A instalacao automatica do Python falhou.
-  echo Instale manualmente Python 3.12 ou superior em https://www.python.org/downloads/windows/
-  echo Marque a opcao "Add python.exe to PATH" durante a instalacao.
+  echo [ERROR] Automatic Python installation failed.
+  echo Install Python 3.12 or newer manually from https://www.python.org/downloads/windows/
+  echo Select "Add python.exe to PATH" during installation.
   exit /b 1
 )
 exit /b 0
 
 :fatal
 echo.
-echo Nao foi possivel iniciar o BOSS Redfish Wizard.
+echo BOSS Redfish Wizard could not be started.
 echo.
 pause
 exit /b 1
