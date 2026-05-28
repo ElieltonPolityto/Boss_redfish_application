@@ -74,7 +74,7 @@ Generated template ZIP files are written to `dist/`. The `dist/` folder is ignor
 
 | File | Purpose |
 | --- | --- |
-| `ABRIR_REDFISH_WIZARD.bat` | Windows launcher. Checks Python, checks required standard modules, optionally installs Python through `winget`, and opens the GUI. |
+| `ABRIR_REDFISH_WIZARD.bat` | Windows CLI launcher. Checks Python, optionally installs Python through `winget`, and opens a terminal menu for wizard, diagnostics, readings, and polling. |
 | `boss_redfish_wizard.py` | Small Python entrypoint that starts the desktop GUI. |
 | `boss_redfish_cli.py` | Command-line interface for diagnostics, template generation, and sensor readings. |
 | `boss_redfish/acquiredp.py` | Parses the BOSS `acquiredp` XML into controllers, types, groups, and variables. Also provides filtering helpers. |
@@ -91,8 +91,8 @@ Generated template ZIP files are written to `dist/`. The `dist/` folder is ignor
 
 ```mermaid
 flowchart TD
-    A["Operator opens ABRIR_REDFISH_WIZARD.bat"] --> B["Launcher validates Python and tkinter"]
-    B --> C["Desktop GUI starts"]
+    A["Operator opens ABRIR_REDFISH_WIZARD.bat"] --> B["Launcher validates Python"]
+    B --> C["Terminal CLI menu starts"]
     C --> D["User enters BOSS URL"]
     D --> E["Diagnostics check BOSS web, acquiredp, and Redfish"]
     E --> F["Application downloads and parses acquiredp"]
@@ -131,7 +131,7 @@ The Redfish resource ID is sanitized for URLs, but the original BOSS code stays 
 
 ### Windows Launcher Behavior
 
-`ABRIR_REDFISH_WIZARD.bat` is the recommended Windows entrypoint.
+`ABRIR_REDFISH_WIZARD.bat` is the recommended Windows entrypoint for the terminal CLI flow.
 
 It checks for Python in this order:
 
@@ -145,9 +145,8 @@ It checks for Python in this order:
 It validates:
 
 - Python 3.10 or newer.
-- `tkinter`.
 - Standard modules used by the application.
-- Import of `boss_redfish.gui_app`.
+- Import of `boss_redfish_cli`.
 
 If no valid Python is found, it tries:
 
@@ -166,7 +165,7 @@ BOSS Redfish Wizard
 ====================
 
 [OK] Python and basic dependencies found.
-[OK] Starting graphical interface.
+[OK] Starting command line interface.
 ```
 
 Python not found:
@@ -191,8 +190,19 @@ Select "Add python.exe to PATH" during installation.
 Application files missing or broken:
 
 ```text
-[ERROR] Python was found, but the application could not be loaded.
-Check that this folder is complete and that boss_redfish_wizard.py exists.
+[ERROR] Python was found, but the CLI application could not be loaded.
+Check that this folder is complete and that boss_redfish_cli.py exists.
+```
+
+CLI menu:
+
+```text
+Select an option:
+  1 - Guided wizard
+  2 - Diagnose BOSS / Redfish
+  3 - Read sensor once or with polling
+  4 - CLI help
+  5 - Exit
 ```
 
 ### Desktop Screens
@@ -230,10 +240,10 @@ $env:BOSS_REDFISH_PYTHON = "C:\Python312\python.exe"
 
 ### Run On Linux
 
-Linux does not use the `.bat` launcher. Install Python 3 with `tkinter` through your distribution package manager, then run:
+Linux does not use the `.bat` launcher. Install Python 3, then run the CLI directly:
 
 ```bash
-python3 boss_redfish_wizard.py
+python3 boss_redfish_cli.py wizard --boss http://BOSS_IP/boss/
 ```
 
 ### CLI Usage
@@ -377,7 +387,7 @@ Templates `.zip` gerados ficam em `dist/`. A pasta `dist/` e ignorada pelo Git.
 
 | Arquivo | Objetivo |
 | --- | --- |
-| `ABRIR_REDFISH_WIZARD.bat` | Launcher Windows. Verifica Python, valida modulos basicos, tenta instalar Python via `winget` se necessario e abre a GUI. |
+| `ABRIR_REDFISH_WIZARD.bat` | Launcher CLI para Windows. Verifica Python, tenta instalar Python via `winget` se necessario e abre um menu de terminal para wizard, diagnostico, leitura e polling. |
 | `boss_redfish_wizard.py` | Pequeno entrypoint Python que inicia a interface desktop. |
 | `boss_redfish_cli.py` | Interface de linha de comando para diagnostico, geracao de template e leitura. |
 | `boss_redfish/acquiredp.py` | Faz o parse do XML `acquiredp` em controladores, tipos, grupos e variaveis. Tambem fornece filtros. |
@@ -394,8 +404,8 @@ Templates `.zip` gerados ficam em `dist/`. A pasta `dist/` e ignorada pelo Git.
 
 ```mermaid
 flowchart TD
-    A["Operador abre ABRIR_REDFISH_WIZARD.bat"] --> B["Launcher valida Python e tkinter"]
-    B --> C["Interface desktop inicia"]
+    A["Operador abre ABRIR_REDFISH_WIZARD.bat"] --> B["Launcher valida Python"]
+    B --> C["Menu CLI no terminal inicia"]
     C --> D["Usuario informa URL do BOSS"]
     D --> E["Diagnostico testa BOSS web, acquiredp e Redfish"]
     E --> F["Aplicacao baixa e interpreta acquiredp"]
@@ -434,7 +444,7 @@ O ID Redfish e sanitizado para URL, mas o codigo original do BOSS permanece dent
 
 ### Comportamento Do Launcher Windows
 
-`ABRIR_REDFISH_WIZARD.bat` e o ponto de entrada recomendado no Windows.
+`ABRIR_REDFISH_WIZARD.bat` e o ponto de entrada recomendado no Windows para o fluxo CLI em terminal.
 
 Ele procura Python nesta ordem:
 
@@ -448,9 +458,8 @@ Ele procura Python nesta ordem:
 Ele valida:
 
 - Python 3.10 ou superior.
-- `tkinter`.
 - Modulos padrao usados pela aplicacao.
-- Importacao de `boss_redfish.gui_app`.
+- Importacao de `boss_redfish_cli`.
 
 Se nenhum Python valido for encontrado, ele tenta:
 
@@ -469,7 +478,7 @@ BOSS Redfish Wizard
 ====================
 
 [OK] Python and basic dependencies found.
-[OK] Starting graphical interface.
+[OK] Starting command line interface.
 ```
 
 Python nao encontrado:
@@ -494,8 +503,19 @@ Select "Add python.exe to PATH" during installation.
 Arquivos da aplicacao ausentes ou quebrados:
 
 ```text
-[ERROR] Python was found, but the application could not be loaded.
-Check that this folder is complete and that boss_redfish_wizard.py exists.
+[ERROR] Python was found, but the CLI application could not be loaded.
+Check that this folder is complete and that boss_redfish_cli.py exists.
+```
+
+Menu CLI:
+
+```text
+Select an option:
+  1 - Guided wizard
+  2 - Diagnose BOSS / Redfish
+  3 - Read sensor once or with polling
+  4 - CLI help
+  5 - Exit
 ```
 
 ### Telas Da Interface
@@ -533,10 +553,10 @@ $env:BOSS_REDFISH_PYTHON = "C:\Python312\python.exe"
 
 ### Rodar No Linux
 
-Linux nao usa o launcher `.bat`. Instale Python 3 com `tkinter` pelo gerenciador de pacotes da distribuicao e execute:
+Linux nao usa o launcher `.bat`. Instale Python 3 e execute o CLI diretamente:
 
 ```bash
-python3 boss_redfish_wizard.py
+python3 boss_redfish_cli.py wizard --boss http://BOSS_IP/boss/
 ```
 
 ### Uso Via CLI
