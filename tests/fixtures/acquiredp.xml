@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<item name="Sample BOSS" separator=".">
+  <type name="MB_ChillPack_v307">
+    <item name="Digitals">
+      <item name="Degelo | Def_Status" type="boolean" />
+    </item>
+    <item name="Analogs">
+      <item name="Temp retorno | TempRetorno" type="number" />
+      <item name="Comp - Potencia | DriveComp_dados.Power_KW" type="number" />
+      <item name="Pressao succao - Offset | AI_PressaoSuccao.p_Offset" type="number" />
+    </item>
+    <item name="Integers">
+      <item name="Tempo compressor | Comp_Time" type="number" />
+    </item>
+    <item name="Alarms">
+      <item name="Alarme geral | ALM_General" type="boolean" />
+    </item>
+  </type>
+  <type name="MB_EcoPack_v400">
+    <item name="Digitals">
+      <item name="Degelo | Def_Status" type="boolean" />
+      <item name="Compressor | Out_Compressor" type="boolean" />
+    </item>
+    <item name="Analogs">
+      <item name="Temp ambiente | TpAmbiente" type="number" />
+      <item name="Comp cap | Out_ConvFreq" type="number" />
+      <item name="Temp degelo | TpDegelo" type="number" />
+    </item>
+    <item name="Integers">
+      <item name="Tempo max degelo | p_Def_TempoMax" type="number" />
+    </item>
+    <item name="Alarms">
+      <item name="Sensor temp ambiente aberto | ALM_SensorTpAmb" type="boolean" />
+    </item>
+  </type>
+  <item name="9.002.Controller 2 - Sample Chiller" type="#MB_ChillPack_v307" />
+  <item name="9.006.Controller 6 - Sample Eco Pack" type="#MB_EcoPack_v400" />
+  <item name="9.007.Controller 7 - Sample Eco Pack" type="#MB_EcoPack_v400" />
+</item>
