@@ -66,6 +66,7 @@ class RedfishClient:
         self.verify_tls = verify_tls
         self.timeout = timeout
         self.token: str | None = None
+        self._session_uri: str | None = None
 
     def _ssl_context(self) -> ssl.SSLContext | None:
         if self.base_url.lower().startswith("https://") and not self.verify_tls:
@@ -85,6 +86,7 @@ class RedfishClient:
         *,
         payload: dict[str, Any] | None = None,
         auth: bool = True,
+        _retried: bool = False,
     ) -> tuple[dict[str, Any], Any]:
         body = None
         headers = {"Accept": "application/json"}
@@ -113,6 +115,16 @@ class RedfishClient:
                 parsed = json.loads(raw.decode("utf-8")) if raw else {}
                 return parsed, response
         except urllib.error.HTTPError as exc:
+            # BOSS Redfish sessions expire silently. One transparent retry with a
+            # fresh login covers long-running polling without exposing the reset to callers.
+            if exc.code == 401 and auth and not _retried:
+                exc.close()
+                self.token = None
+                self._session_uri = None
+                self.login()
+                return self._request_json(
+                    method, path, payload=payload, auth=auth, _retried=True,
+                )
             message = exc.read().decode("utf-8", errors="replace")
             raise RedfishError(f"HTTP {exc.code} calling {path}: {message}") from exc
         except urllib.error.URLError as exc:
@@ -130,7 +142,27 @@ class RedfishClient:
         if not token:
             raise RedfishError("Login succeeded but BOSS did not return X-Auth-Token")
         self.token = token
+        self._session_uri = response.headers.get("Location")
         return token
+
+    def logout(self) -> None:
+        # BOSS caps the number of concurrent Redfish sessions; without DELETE the
+        # session lingers until TTL and crashy clients eventually lock everyone out.
+        if not self.token or not self._session_uri:
+            return
+        try:
+            self._request_json("DELETE", self._session_uri, _retried=True)
+        except RedfishError:
+            pass
+        finally:
+            self.token = None
+            self._session_uri = None
+
+    def __enter__(self) -> "RedfishClient":
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.logout()
 
     def get_json(self, path: str) -> dict[str, Any]:
         parsed, _response = self._request_json("GET", path)
