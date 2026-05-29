@@ -69,7 +69,10 @@ class RedfishClient:
 
     def _ssl_context(self) -> ssl.SSLContext | None:
         if self.base_url.lower().startswith("https://") and not self.verify_tls:
-            return ssl._create_unverified_context()
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            return ctx
         return None
 
     def _url(self, path: str) -> str:

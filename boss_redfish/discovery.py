@@ -65,7 +65,10 @@ def normalize_boss_urls(raw_boss: str) -> BossUrls:
 
 def _ssl_context(url: str, verify_tls: bool) -> ssl.SSLContext | None:
     if url.lower().startswith("https://") and not verify_tls:
-        return ssl._create_unverified_context()
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
     return None
 
 
