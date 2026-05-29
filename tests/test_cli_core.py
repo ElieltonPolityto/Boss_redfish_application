@@ -2,7 +2,14 @@ import unittest
 from pathlib import Path
 
 from boss_redfish.acquiredp import parse_acquiredp
-from boss_redfish.gui_core import parse_polling_ms, reading_table_rows, select_variables_by_code, template_preview_rows
+from boss_redfish.cli_core import (
+    parse_polling_ms,
+    reading_table_rows,
+    select_variables_by_code,
+    template_preview_rows,
+    save_last_session,
+    load_last_session,
+)
 
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "acquiredp.xml"
@@ -57,6 +64,39 @@ class GuiCoreTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     parse_polling_ms(value)
+
+
+class SessionCacheTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        import boss_redfish.cli_core
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.old_cache_file = boss_redfish.cli_core.SESSION_CACHE_FILE
+        self.test_cache_file = Path(self.tmpdir.name) / "last_session.json"
+        boss_redfish.cli_core.SESSION_CACHE_FILE = self.test_cache_file
+
+    def tearDown(self):
+        import boss_redfish.cli_core
+        boss_redfish.cli_core.SESSION_CACHE_FILE = self.old_cache_file
+        self.tmpdir.cleanup()
+
+    def test_save_and_load_session_caching(self):
+        # Assert no session initially
+        self.assertIsNone(load_last_session())
+
+        # Save session
+        save_last_session(
+            redfish_url="https://192.168.0.133",
+            chassis_id="CPCO_7_Eco2Pack_L3_Master_Cam_Congelados",
+            sensor_ids=["Temp_ambiente_TpAmbiente"],
+        )
+
+        # Load session and check contents
+        session = load_last_session()
+        self.assertIsNotNone(session)
+        self.assertEqual(session["redfish_url"], "https://192.168.0.133")
+        self.assertEqual(session["chassis_id"], "CPCO_7_Eco2Pack_L3_Master_Cam_Congelados")
+        self.assertEqual(session["sensor_ids"], ["Temp_ambiente_TpAmbiente"])
 
 
 if __name__ == "__main__":

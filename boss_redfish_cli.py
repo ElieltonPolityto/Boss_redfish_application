@@ -22,7 +22,7 @@ from boss_redfish import (
     create_template_archive,
 )
 from boss_redfish.acquiredp import filter_variables, parse_acquiredp
-from boss_redfish.gui_core import parse_polling_ms
+from boss_redfish.cli_core import parse_polling_ms
 from boss_redfish.template import create_generic_template_archive
 from boss_redfish.wizard import run_diagnose, run_wizard
 
@@ -116,12 +116,31 @@ def command_read(args: argparse.Namespace) -> int:
     if args.count < 0:
         raise ValueError("--count must be zero or greater")
 
+    if not args.boss:
+        from boss_redfish.cli_core import load_last_session
+        last = load_last_session()
+        if not last:
+            raise ValueError(
+                "Nenhuma sessao anterior configurada.\n"
+                "  Especifique --boss, --chassis-id e --sensor."
+            )
+        args.boss = last["redfish_url"]
+        args.chassis_id = last["chassis_id"]
+        if not args.sensor:
+            args.sensor = last["sensor_ids"]
+
+        print("Carregando ultima sessao salva:")
+        print(f"  URL:      {args.boss}")
+        print(f"  Chassis:  {args.chassis_id}")
+        print(f"  Sensores: {', '.join(args.sensor)}")
+        print()
+
     password = args.password or getpass.getpass("Senha Redfish: ")
     client = RedfishClient(
         base_url=args.boss,
         username=args.user,
         password=password,
-        verify_tls=not args.insecure,
+        verify_tls=args.secure,
         timeout=args.timeout,
     )
 
@@ -195,13 +214,13 @@ def build_parser() -> argparse.ArgumentParser:
     generic.set_defaults(func=command_template_from_selection)
 
     read = subparsers.add_parser("read", help="read Redfish sensor values")
-    read.add_argument("--boss", required=True, help="Redfish base URL or IP, for example https://BOSS_IP")
+    read.add_argument("--boss", default="", help="Redfish base URL or IP, for example https://BOSS_IP")
     read.add_argument("--user", default="admin")
     read.add_argument("--password", default="")
     read.add_argument("--chassis-id", default=DEFAULT_CHASSIS_ID)
     read.add_argument("--sensor", action="append", default=[], help="specific sensor id to read; can be repeated")
     read.add_argument("--timeout", type=float, default=15.0)
-    read.add_argument("--insecure", action="store_true", help="disable TLS certificate verification")
+    read.add_argument("--secure", action="store_true", help="enable strict TLS certificate verification")
     read.add_argument("--json", action="store_true", help="print full Redfish JSON")
     read.add_argument("--watch", action="store_true", help="repeat readings until Ctrl+C or --count is reached")
     read.add_argument("--polling-ms", default="1000", help="polling interval in milliseconds; minimum 250")
@@ -217,7 +236,33 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except (RedfishError, ValueError, OSError) as exc:
-        print(f"Erro: {exc}", file=sys.stderr)
+        msg = str(exc)
+        print(f"Erro: {msg}", file=sys.stderr)
+        if "401" in msg:
+            print(
+                "\nDica: Acesso nao autorizado (401).\n"
+                "  - O usuario Redfish deve ser 'admin'.\n"
+                "  - Verifique se a senha Redfish esta correta no BOSS.\n"
+                "  - Nao confunda a senha web do BOSS com a senha Redfish.",
+                file=sys.stderr,
+            )
+        elif "404" in msg:
+            print(
+                "\nDica: Recurso nao encontrado (404).\n"
+                "  - Verifique se o template .zip foi importado no BOSS.\n"
+                "  - Apos importar, clique em Start/Restart na pagina Redfish Server.\n"
+                "  - Confira se o Chassis ID e o Sensor ID estao corretos.\n"
+                "  - Use o ID Redfish mostrado na previa do template, nao o numero da lista.",
+                file=sys.stderr,
+            )
+        elif "Could not reach" in msg or "timeout" in msg.lower():
+            print(
+                "\nDica: Nao foi possivel conectar ao BOSS.\n"
+                "  - Verifique se a maquina esta na mesma rede do BOSS.\n"
+                "  - Confira cabos de rede e se o IP esta correto.\n"
+                "  - A URL Redfish deve ser https://IP (sem /boss/).",
+                file=sys.stderr,
+            )
         return 1
 
 

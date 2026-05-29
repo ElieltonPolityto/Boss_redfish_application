@@ -8,7 +8,7 @@ from .acquiredp import AcquiredpCatalog, Device, Variable, filter_devices, filte
 from .client import RedfishClient, RedfishError, build_reading_summary
 from .discovery import BossUrls, diagnose_boss, fetch_text, normalize_boss_urls
 from .template import build_sensor_definitions, chassis_id_for_device, create_generic_template_archive
-from .web_import import assisted_import_template, manual_import_steps
+from .web_import import manual_import_steps
 
 
 @dataclass(frozen=True)
@@ -109,21 +109,37 @@ def output_name_for(device: Device) -> Path:
     return Path("dist") / f"redfish_{device.code.replace('.', '_')}_{safe}.zip"
 
 
-def preview_selection(selection: Selection) -> None:
+def preview_selection(selection: Selection, redfish_base: str) -> None:
     print_banner("Previa do template")
     print(f"Controlador: {selection.device.code} - {selection.device.name}")
     print(f"Chassis ID:  {selection.chassis_id}")
     print(f"Arquivo:     {selection.output_zip}")
     print()
-    for sensor in build_sensor_definitions(selection.device.code, selection.variables):
+    sensors = build_sensor_definitions(selection.device.code, selection.variables)
+    for sensor in sensors:
         print(f"- {sensor.name}")
         print(f"  Codigo BOSS: {sensor.variable_code}")
         print(f"  ID Redfish:  {sensor.resource_id}")
         print(f"  Placeholder: {sensor.placeholder}")
 
+    print()
+    print("=" * 58)
+    print("IMPORTANTE: Use estes valores no menu 3 (Leitura).")
+    print("Use o Chassis ID e o ID Redfish acima.")
+    print("NAO use o numero da lista como Sensor ID.")
+    print("=" * 58)
+
+    if sensors:
+        first = sensors[0]
+        print()
+        print("Exemplo de comando para leitura (copie e cole):")
+        print(f"  python boss_redfish_cli.py read --boss {redfish_base} "
+              f"--chassis-id {selection.chassis_id} "
+              f"--sensor {first.resource_id}")
+
 
 def print_manual_import_instructions(output_zip: Path) -> None:
-    print_banner("Importacao manual")
+    print_banner("Proximo passo: importar no BOSS")
     print(manual_import_steps(output_zip))
 
 
@@ -153,10 +169,6 @@ def read_after_import(urls: BossUrls, selection: Selection) -> None:
 
 def run_wizard(raw_boss: str, *, web_user: str = "") -> int:
     urls = print_diagnostic(raw_boss)
-    if web_user:
-        print()
-        print(f"Usuario web informado: {web_user}")
-        print("A senha web sera pedida apenas se a importacao por navegador for implementada nesta maquina.")
 
     catalog = load_catalog(urls)
     device = choose_device(catalog)
@@ -167,7 +179,7 @@ def run_wizard(raw_boss: str, *, web_user: str = "") -> int:
         chassis_id=chassis_id_for_device(device),
         output_zip=output_name_for(device),
     )
-    preview_selection(selection)
+    preview_selection(selection, urls.redfish_base)
 
     confirm = input("Gerar esse template? [S/n]: ").strip().lower()
     if confirm == "n":
@@ -182,19 +194,18 @@ def run_wizard(raw_boss: str, *, web_user: str = "") -> int:
     )
     print(f"Template gerado: {selection.output_zip}")
 
-    import_now = input("Deseja importar automaticamente no BOSS? [s/N]: ").strip().lower()
-    if import_now == "s":
-        web_user = input("Usuario web do BOSS: ").strip()
-        web_password = getpass.getpass("Senha web do BOSS: ")
-        result = assisted_import_template(
-            urls=urls,
-            web_user=web_user,
-            web_password=web_password,
-            template_zip=selection.output_zip,
-        )
-        print(result.message)
-    else:
-        print_manual_import_instructions(selection.output_zip)
+    from .cli_core import save_last_session
+    sensor_ids = [
+        sensor.resource_id
+        for sensor in build_sensor_definitions(selection.device.code, selection.variables)
+    ]
+    save_last_session(
+        redfish_url=urls.redfish_base,
+        chassis_id=selection.chassis_id,
+        sensor_ids=sensor_ids,
+    )
+
+    print_manual_import_instructions(selection.output_zip)
 
     read_after_import(urls, selection)
     return 0

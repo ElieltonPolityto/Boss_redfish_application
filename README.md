@@ -4,9 +4,9 @@
 
 ### What This Project Does
 
-BOSS Redfish Wizard is a Python desktop and CLI tool for CAREL BOSS supervisors. It helps an operator diagnose the BOSS Redfish service, inspect the BOSS `acquiredp` XML, select controllers and variables, generate Redfish template ZIP files, and read values exposed through the BOSS Redfish API.
+BOSS Redfish Wizard is a Python CLI tool for CAREL BOSS supervisors. It helps an operator diagnose the BOSS Redfish service, inspect the BOSS `acquiredp` XML, select controllers and variables, generate Redfish template ZIP files, and read values exposed through the BOSS Redfish API.
 
-The project is intentionally lightweight. It uses only the Python standard library and `tkinter`, so it can run on Windows and Linux without a dependency installation step in most environments.
+The project is intentionally lightweight. It uses only the Python standard library, so it can run on Windows and Linux without a dependency installation step in most environments.
 
 ### What Is CAREL BOSS?
 
@@ -49,18 +49,19 @@ Main advantages:
 |-- boss_redfish_cli.py
 |-- boss_redfish/
 |   |-- acquiredp.py
+|   |-- cli_core.py
 |   |-- client.py
 |   |-- discovery.py
-|   |-- gui_app.py
-|   |-- gui_core.py
 |   |-- template.py
 |   |-- web_import.py
 |   |-- wizard.py
 |   `-- __init__.py
+|-- deprecated/
+|   `-- gui_app.py
 |-- tests/
 |   |-- fixtures/acquiredp.xml
 |   |-- test_acquiredp_template.py
-|   |-- test_gui_core.py
+|   |-- test_cli_core.py
 |   |-- test_template_client.py
 |   `-- test_web_import.py
 |-- README.md
@@ -75,17 +76,16 @@ Generated template ZIP files are written to `dist/`. The `dist/` folder is ignor
 | File | Purpose |
 | --- | --- |
 | `ABRIR_REDFISH_WIZARD.bat` | Windows CLI launcher. Checks Python, optionally installs Python through `winget`, and opens a terminal menu for wizard, diagnostics, readings, and polling. |
-| `boss_redfish_wizard.py` | Small Python entrypoint that starts the desktop GUI. |
+| `boss_redfish_wizard.py` | Small Python entrypoint that launches the CLI wizard. |
 | `boss_redfish_cli.py` | Command-line interface for diagnostics, template generation, and sensor readings. |
 | `boss_redfish/acquiredp.py` | Parses the BOSS `acquiredp` XML into controllers, types, groups, and variables. Also provides filtering helpers. |
+| `boss_redfish/cli_core.py` | CLI-independent helpers for polling, template preview, and readings. Covered by tests. |
 | `boss_redfish/discovery.py` | Normalizes BOSS URLs and probes BOSS web, `acquiredp`, Redfish root, and protected Redfish resources. |
 | `boss_redfish/template.py` | Builds Redfish JSON resources and writes the template ZIP. Sanitizes IDs and preserves original BOSS variable codes in placeholders. |
 | `boss_redfish/client.py` | Handles Redfish session login and sensor reads. |
-| `boss_redfish/gui_app.py` | Desktop GUI implementation with connection, controller selection, template, and reading tabs. |
-| `boss_redfish/gui_core.py` | GUI-independent helpers used by the interface and covered by tests. |
-| `boss_redfish/wizard.py` | Terminal-guided workflow for users who prefer CLI interaction. |
-| `boss_redfish/web_import.py` | Manual import instructions and a safe hook for future browser-assisted import. |
-| `tests/` | Automated tests for parser, template generation, client behavior, GUI helpers, and import fallback. |
+| `boss_redfish/wizard.py` | Terminal-guided workflow for controller/variable selection, template generation, and reading. |
+| `boss_redfish/web_import.py` | Manual import instructions for the BOSS Redfish Server page. |
+| `tests/` | Automated tests for parser, template generation, client behavior, CLI helpers, and import. |
 
 ### General Logic
 
@@ -205,16 +205,24 @@ Select an option:
   5 - Exit
 ```
 
-### Desktop Screens
+### BOSS URL vs Redfish URL
 
-The GUI is organized into four tabs:
+- **BOSS URL**: `http(s)://IP/boss/` — used for diagnostics and downloading the `acquiredp` XML.
+- **Redfish URL**: `https://IP` — used for sensor readings. No `/boss/` suffix.
 
-| Tab | Purpose |
-| --- | --- |
-| `1. Conexao` | Enter BOSS URL, optional web user, Redfish admin password, and run diagnostics. |
-| `2. Controlador` | Filter and select controllers from `acquiredp`; filter and select variables. |
-| `3. Template` | Preview Redfish IDs/placeholders, choose the ZIP output path, generate the template, and show manual import instructions. |
-| `4. Leitura` | Log in to Redfish, read the selected variables once, or keep polling them at a user-defined interval in milliseconds. |
+If you type just the IP (for example `192.168.0.133`), the application normalizes it automatically.
+
+### Chassis ID And Sensor ID
+
+- **Chassis ID**: Generated from the controller name. Example: `CPCO_7_Eco2Pack_L3_Master_Cam_Congelados`.
+- **Sensor ID**: The Redfish resource ID shown in the template preview. Example: `Temp_ambiente_TpAmbiente`.
+- **Sensor ID is NOT the list index number**. Always use the ID Redfish string, not the number shown in the list.
+
+The Redfish username is always `admin`. Do not use the BOSS web username for Redfish queries.
+
+### TLS And Security
+
+BOSS devices typically use self-signed TLS certificates. By default, the application skips TLS certificate verification to avoid connection errors. Use `--secure` to enable strict TLS verification if your environment has proper certificates.
 
 ### Run On Windows
 
@@ -263,19 +271,19 @@ python boss_redfish_cli.py template-from-selection --acquiredp tests\fixtures\ac
 Read a published sensor:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id CHASSIS_NAME --sensor SENSOR_ID
 ```
 
 Poll a published sensor every 500 ms until stopped with `Ctrl+C`:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500
 ```
 
 Poll a sensor a fixed number of times, useful for tests or quick checks:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500 --count 10
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id CHASSIS_NAME --sensor SENSOR_ID --watch --polling-ms 500 --count 10
 ```
 
 `--polling-ms` uses milliseconds. The application accepts 250 ms or higher, but 500 ms or higher is recommended to avoid unnecessary load on BOSS.
@@ -305,7 +313,7 @@ python -m unittest discover -s tests -p "test*.py" -v
 - Passwords are not saved to files.
 - Generated templates are ignored by Git through `dist/`.
 - The test XML is synthetic and does not contain a real installation map.
-- Direct browser automation for importing templates is not implemented yet. The app currently generates the ZIP and shows manual import steps.
+- Template import is manual. The app generates the ZIP and shows the import steps.
 - Ping alone is not enough to validate BOSS connectivity. The diagnostics check HTTP/HTTPS endpoints directly.
 - A `401` response from `/redfish/v1/Chassis` without a token is expected and means the protected Redfish route exists.
 - `WRONG_PLACEHOLDER` usually means the selected BOSS variable is not logged/historicized.
@@ -317,9 +325,9 @@ python -m unittest discover -s tests -p "test*.py" -v
 
 ### O Que Este Projeto Faz
 
-BOSS Redfish Wizard e uma aplicacao Python com interface desktop e CLI para supervisores CAREL BOSS. Ela ajuda o operador a diagnosticar o servico Redfish do BOSS, inspecionar o XML `acquiredp`, escolher controladores e variaveis, gerar templates Redfish em `.zip` e ler valores publicados pela API Redfish.
+BOSS Redfish Wizard e uma aplicacao Python em CLI para supervisores CAREL BOSS. Ela ajuda o operador a diagnosticar o servico Redfish do BOSS, inspecionar o XML `acquiredp`, escolher controladores e variaveis, gerar templates Redfish em `.zip` e ler valores publicados pela API Redfish.
 
-O projeto foi mantido leve de proposito. Ele usa apenas biblioteca padrao do Python e `tkinter`, entao normalmente roda em Windows e Linux sem uma etapa de instalacao de dependencias externas.
+O projeto foi mantido leve de proposito. Ele usa apenas a biblioteca padrao do Python, entao normalmente roda em Windows e Linux sem uma etapa de instalacao de dependencias externas.
 
 ### O Que E CAREL BOSS?
 
@@ -362,23 +370,24 @@ Principais vantagens:
 |-- boss_redfish_cli.py
 |-- boss_redfish/
 |   |-- acquiredp.py
+|   |-- cli_core.py
 |   |-- client.py
 |   |-- discovery.py
-|   |-- gui_app.py
-|   |-- gui_core.py
 |   |-- template.py
 |   |-- web_import.py
 |   |-- wizard.py
 |   `-- __init__.py
+|-- deprecated/
+|   `-- gui_app.py
 |-- tests/
 |   |-- fixtures/acquiredp.xml
 |   |-- test_acquiredp_template.py
-|   |-- test_gui_core.py
+|   |-- test_cli_core.py
 |   |-- test_template_client.py
 |   `-- test_web_import.py
 |-- README.md
 |-- .gitignore
-`-- .gitattributes
+|-- .gitattributes
 ```
 
 Templates `.zip` gerados ficam em `dist/`. A pasta `dist/` e ignorada pelo Git.
@@ -388,17 +397,16 @@ Templates `.zip` gerados ficam em `dist/`. A pasta `dist/` e ignorada pelo Git.
 | Arquivo | Objetivo |
 | --- | --- |
 | `ABRIR_REDFISH_WIZARD.bat` | Launcher CLI para Windows. Verifica Python, tenta instalar Python via `winget` se necessario e abre um menu de terminal para wizard, diagnostico, leitura e polling. |
-| `boss_redfish_wizard.py` | Pequeno entrypoint Python que inicia a interface desktop. |
+| `boss_redfish_wizard.py` | Pequeno entrypoint Python que inicia o assistente em CLI. |
 | `boss_redfish_cli.py` | Interface de linha de comando para diagnostico, geracao de template e leitura. |
 | `boss_redfish/acquiredp.py` | Faz o parse do XML `acquiredp` em controladores, tipos, grupos e variaveis. Tambem fornece filtros. |
+| `boss_redfish/cli_core.py` | Funcoes independentes de CLI usadas pela aplicacao e cobertas por testes. |
 | `boss_redfish/discovery.py` | Normaliza URLs do BOSS e testa BOSS web, `acquiredp`, raiz Redfish e recursos protegidos. |
 | `boss_redfish/template.py` | Gera os recursos JSON Redfish e grava o ZIP. Sanitiza IDs e preserva codigos BOSS nos placeholders. |
 | `boss_redfish/client.py` | Faz login de sessao Redfish e leitura de sensores. |
-| `boss_redfish/gui_app.py` | Implementacao da GUI com abas de conexao, controlador, template e leitura. |
-| `boss_redfish/gui_core.py` | Funcoes independentes de GUI usadas pela tela e cobertas por testes. |
-| `boss_redfish/wizard.py` | Fluxo guiado no terminal para quem preferir CLI interativo. |
-| `boss_redfish/web_import.py` | Instrucoes de importacao manual e ponto seguro para futura importacao assistida por navegador. |
-| `tests/` | Testes automatizados do parser, template, cliente, helpers de GUI e fallback de importacao. |
+| `boss_redfish/wizard.py` | Fluxo guiado no terminal para controlador/variaveis e geracao de template. |
+| `boss_redfish/web_import.py` | Instrucoes de importacao manual para a pagina do Redfish Server no BOSS. |
+| `tests/` | Testes automatizados do parser, template, cliente, helpers de CLI e importacao. |
 
 ### Esquematico Geral Da Logica
 
@@ -518,16 +526,24 @@ Select an option:
   5 - Exit
 ```
 
-### Telas Da Interface
+### URL do BOSS vs URL Redfish
 
-A GUI e organizada em quatro abas:
+- **URL do BOSS**: `http(s)://IP/boss/` — usada para diagnosticos e download do XML `acquiredp`.
+- **URL Redfish**: `https://IP` — usada para leitura de sensores. Nao deve conter o sufixo `/boss/`.
 
-| Aba | Objetivo |
-| --- | --- |
-| `1. Conexao` | Informar URL do BOSS, usuario web opcional, senha Redfish admin e executar diagnostico. |
-| `2. Controlador` | Filtrar e escolher controladores do `acquiredp`; filtrar e escolher variaveis. |
-| `3. Template` | Conferir IDs Redfish/placeholders, escolher destino do ZIP, gerar template e ver instrucoes de importacao manual. |
-| `4. Leitura` | Fazer login no Redfish, ler as variaveis selecionadas uma vez ou manter polling com intervalo definido pelo usuario em milissegundos. |
+Se voce digitar apenas o IP (ex: `192.168.0.133`), a aplicacao faz a normalizacao automaticamente.
+
+### Chassis ID e Sensor ID
+
+- **Chassis ID**: Gerado a partir do nome do controlador. Exemplo: `CPCO_7_Eco2Pack_L3_Master_Cam_Congelados`.
+- **Sensor ID**: O ID do recurso Redfish exibido no preview do template. Exemplo: `Temp_ambiente_TpAmbiente`.
+- **O Sensor ID NAO e o numero de indice da lista**. Use sempre a string do ID Redfish, nao o numero correspondente.
+
+O usuario do Redfish e sempre `admin`. Nao utilize o usuario web do BOSS para consultas Redfish.
+
+### TLS e Seguranca
+
+Dispositivos BOSS normalmente utilizam certificados TLS autoassinados. Por padrao, a aplicacao ignora a verificacao do certificado TLS para evitar erros de conexao. Use o argumento `--secure` caso queira impor a validacao estrita do certificado TLS.
 
 ### Rodar No Windows
 
@@ -576,19 +592,19 @@ python boss_redfish_cli.py template-from-selection --acquiredp tests\fixtures\ac
 Ler um sensor publicado:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR
 ```
 
 Fazer polling de um sensor publicado a cada 500 ms ate parar com `Ctrl+C`:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500
 ```
 
 Fazer polling por uma quantidade fixa de ciclos, util para testes rapidos:
 
 ```powershell
-python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500 --count 10
+python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --chassis-id NOME_DO_CHASSIS --sensor ID_DO_SENSOR --watch --polling-ms 500 --count 10
 ```
 
 `--polling-ms` usa milissegundos. A aplicacao aceita 250 ms ou mais, mas 500 ms ou mais e recomendado para evitar carga desnecessaria no BOSS.
@@ -605,7 +621,7 @@ python boss_redfish_cli.py read --boss https://BOSS_IP --user admin --insecure -
 8. Gere o template `.zip`.
 9. Importe o ZIP no BOSS.
 10. Clique em `Start` novamente na pagina Redfish do BOSS.
-11. Leia os valores no wizard.
+11. Leia os valores no wizard ou CLI.
 
 ### Validacao Local
 
@@ -618,7 +634,7 @@ python -m unittest discover -s tests -p "test*.py" -v
 - Senhas nao sao salvas em arquivo.
 - Templates gerados sao ignorados pelo Git por meio da pasta `dist/`.
 - O XML de teste e sintetico e nao contem mapa real de instalacao.
-- A importacao automatica por navegador ainda nao esta implementada. O app gera o ZIP e mostra os passos de importacao manual.
+- A importacao do template e manual. O app gera o ZIP e mostra os passos de importacao.
 - Ping sozinho nao valida conectividade com o BOSS. O diagnostico testa endpoints HTTP/HTTPS diretamente.
 - Uma resposta `401` em `/redfish/v1/Chassis` sem token e esperada e indica que a rota protegida Redfish existe.
 - `WRONG_PLACEHOLDER` normalmente indica que a variavel selecionada nao esta logada/historicizada no BOSS.

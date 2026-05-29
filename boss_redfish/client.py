@@ -17,12 +17,37 @@ def normalize_base_url(base_url: str) -> str:
         raise ValueError("base_url is required")
     if "://" not in base_url:
         base_url = "https://" + base_url
-    base_url = base_url.rstrip("/")
-    for suffix in ("/redfish/v1", "/redfish"):
-        if base_url.lower().endswith(suffix):
-            base_url = base_url[: -len(suffix)]
+
+    from urllib.parse import urlsplit, urlunsplit
+    parsed = urlsplit(base_url)
+    scheme = parsed.scheme or "https"
+    host = parsed.netloc or parsed.path
+    is_local = "127.0.0.1" in host or "localhost" in host
+    if scheme == "http" and not is_local:
+        scheme = "https"
+
+    path = parsed.path if parsed.netloc else ""
+    while True:
+        path_lower = path.lower().rstrip("/")
+        changed = False
+
+        for suffix in ("/redfish/v1", "/redfish"):
+            if path_lower.endswith(suffix):
+                path = path.rstrip("/")[:-len(suffix)]
+                changed = True
+                break
+
+        if path.lower().rstrip("/") == "/boss":
+            path = ""
+            changed = True
+        elif path.lower().rstrip("/").endswith("/boss"):
+            path = path.rstrip("/")[:-5]
+            changed = True
+
+        if not changed:
             break
-    return base_url.rstrip("/")
+
+    return urlunsplit((scheme, host, path.rstrip("/"), "", ""))
 
 
 class RedfishClient:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .acquiredp import AcquiredpCatalog, Device, Variable
@@ -58,3 +59,33 @@ def template_preview_rows(device: Device, variables: list[Variable]) -> list[dic
 def reading_table_rows(readings: dict[str, dict[str, Any]]) -> list[tuple[str, str]]:
     summary = build_reading_summary(readings)
     return list(summary.items())
+
+
+SESSION_CACHE_FILE = Path("dist/last_session.json")
+
+
+def save_last_session(*, redfish_url: str, chassis_id: str, sensor_ids: list[str]) -> None:
+    try:
+        from pathlib import Path
+        import json
+        SESSION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "redfish_url": redfish_url,
+            "chassis_id": chassis_id,
+            "sensor_ids": sensor_ids,
+        }
+        with open(SESSION_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def load_last_session() -> dict[str, Any] | None:
+    try:
+        import json
+        if SESSION_CACHE_FILE.is_file():
+            with open(SESSION_CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None

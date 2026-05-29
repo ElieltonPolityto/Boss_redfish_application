@@ -60,11 +60,9 @@ goto :menu
 :wizard
 echo.
 set "BOSS_URL="
-set /p "BOSS_URL=BOSS URL/IP, example http://192.168.0.133/boss/: "
+set /p "BOSS_URL=BOSS URL ou IP (ex: 192.168.0.133 ou http://192.168.0.133/boss/): "
 if "%BOSS_URL%"=="" goto :menu
-set "WEB_USER="
-set /p "WEB_USER=BOSS web user, optional: "
-%PYTHON_CMD% "%APP_ENTRY%" wizard --boss "%BOSS_URL%" --web-user "%WEB_USER%"
+%PYTHON_CMD% "%APP_ENTRY%" wizard --boss "%BOSS_URL%"
 echo.
 pause
 goto :menu
@@ -72,7 +70,7 @@ goto :menu
 :diagnose
 echo.
 set "BOSS_URL="
-set /p "BOSS_URL=BOSS URL/IP, example http://192.168.0.133/boss/: "
+set /p "BOSS_URL=BOSS URL ou IP (ex: 192.168.0.133 ou http://192.168.0.133/boss/): "
 if "%BOSS_URL%"=="" goto :menu
 %PYTHON_CMD% "%APP_ENTRY%" diagnose --boss "%BOSS_URL%"
 echo.
@@ -81,30 +79,119 @@ goto :menu
 
 :read_sensor
 echo.
+echo ========================================
+echo  Leitura de sensor Redfish
+echo ========================================
+echo.
+set "USE_LAST="
+if exist dist\last_session.json (
+  echo Uma configuracao anterior foi encontrada.
+  echo Deseja ler os mesmos sensores da ultima geracao de template?
+  set "USE_LAST=S"
+  set /p "USE_LAST=[S/n]: "
+) else (
+  goto :ask_manual
+)
+if "%USE_LAST%"=="n" goto :ask_manual
+if "%USE_LAST%"=="N" goto :ask_manual
+
+:read_last_session
+choice /c SN /n /m "Usar polling continuo? [S/N]: "
+if errorlevel 2 goto :read_last_once
+
+set "POLLING_MS="
+set /p "POLLING_MS=Intervalo de polling em ms [1000]: "
+if "%POLLING_MS%"=="" set "POLLING_MS=1000"
+%PYTHON_CMD% "%APP_ENTRY%" read --watch --polling-ms "%POLLING_MS%"
+echo.
+pause
+goto :menu
+
+:read_last_once
+%PYTHON_CMD% "%APP_ENTRY%" read
+echo.
+pause
+goto :menu
+
+:ask_manual
+echo.
+echo  Dados necessarios (veja a previa do template no menu 1):
+echo    Redfish URL:  https://IP  (sem /boss/)
+echo    Chassis ID:   Ex: CPCO_7_Eco2Pack_L3_Master_Cam_Congelados
+echo    Sensor ID:    Ex: Temp_ambiente_TpAmbiente
+echo.
+
+:ask_redfish_url
 set "REDFISH_URL="
-set /p "REDFISH_URL=Redfish URL/IP, example https://192.168.0.133: "
+set /p "REDFISH_URL=Redfish URL ou IP (ex: https://192.168.0.133): "
 if "%REDFISH_URL%"=="" goto :menu
-set "REDFISH_USER="
-set /p "REDFISH_USER=Redfish user [admin]: "
-if "%REDFISH_USER%"=="" set "REDFISH_USER=admin"
+echo "%REDFISH_URL%" | findstr /i /C:"/boss" >nul 2>nul
+if not errorlevel 1 (
+  echo [ERRO] A URL Redfish nao deve conter /boss.
+  echo        Use apenas https://IP, exemplo: https://192.168.0.133
+  echo.
+  goto :ask_redfish_url
+)
+
+:ask_chassis_id
 set "CHASSIS_ID="
 set /p "CHASSIS_ID=Chassis ID: "
 if "%CHASSIS_ID%"=="" goto :menu
+echo "%CHASSIS_ID%" | findstr /i /C:"http" /C:"/boss" /C:"/redfish" >nul 2>nul
+if not errorlevel 1 (
+  echo [ERRO] Chassis ID nao e uma URL. Use o nome do chassis.
+  echo        Exemplo: CPCO_7_Eco2Pack_L3_Master_Cam_Congelados
+  echo.
+  goto :ask_chassis_id
+)
+
+:ask_sensor_id
 set "SENSOR_ID="
 set /p "SENSOR_ID=Sensor ID: "
 if "%SENSOR_ID%"=="" goto :menu
-choice /c YN /n /m "Use polling? [Y/N]: "
+echo "%SENSOR_ID%" | findstr /i /C:"http" /C:"/" /C:"\\" >nul 2>nul
+if not errorlevel 1 (
+  echo [ERRO] Sensor ID nao e uma URL nem um caminho.
+  echo        Use o ID Redfish da previa do template.
+  echo        Exemplo: Temp_ambiente_TpAmbiente
+  echo.
+  goto :ask_sensor_id
+)
+%PYTHON_CMD% -c "import sys; sys.exit(0 if sys.argv[1].isdigit() else 1)" "%SENSOR_ID%" >nul 2>nul
+if not errorlevel 1 (
+  echo [ERRO] Sensor ID nao pode ser apenas um numero.
+  echo        Use o ID Redfish da previa, nao o indice da lista.
+  echo        Exemplo: Temp_ambiente_TpAmbiente
+  echo.
+  goto :ask_sensor_id
+)
+
+echo.
+echo ========================================
+echo  Resumo da leitura
+echo ========================================
+echo   Redfish URL : %REDFISH_URL%
+echo   Usuario     : admin
+echo   Chassis ID  : %CHASSIS_ID%
+echo   Sensor ID   : %SENSOR_ID%
+echo ========================================
+echo.
+choice /c SN /n /m "Confirmar leitura? [S/N]: "
+if errorlevel 2 goto :menu
+
+choice /c SN /n /m "Usar polling continuo? [S/N]: "
 if errorlevel 2 goto :read_once
+
 set "POLLING_MS="
-set /p "POLLING_MS=Polling time in ms [1000]: "
+set /p "POLLING_MS=Intervalo de polling em ms [1000]: "
 if "%POLLING_MS%"=="" set "POLLING_MS=1000"
-%PYTHON_CMD% "%APP_ENTRY%" read --boss "%REDFISH_URL%" --user "%REDFISH_USER%" --chassis-id "%CHASSIS_ID%" --sensor "%SENSOR_ID%" --insecure --watch --polling-ms "%POLLING_MS%"
+%PYTHON_CMD% "%APP_ENTRY%" read --boss "%REDFISH_URL%" --user admin --chassis-id "%CHASSIS_ID%" --sensor "%SENSOR_ID%" --watch --polling-ms "%POLLING_MS%"
 echo.
 pause
 goto :menu
 
 :read_once
-%PYTHON_CMD% "%APP_ENTRY%" read --boss "%REDFISH_URL%" --user "%REDFISH_USER%" --chassis-id "%CHASSIS_ID%" --sensor "%SENSOR_ID%" --insecure
+%PYTHON_CMD% "%APP_ENTRY%" read --boss "%REDFISH_URL%" --user admin --chassis-id "%CHASSIS_ID%" --sensor "%SENSOR_ID%"
 echo.
 pause
 goto :menu

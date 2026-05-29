@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Desktop launcher for the BOSS Redfish Wizard."""
+"""CLI launcher for the BOSS Redfish Wizard."""
 
-from boss_redfish.gui_app import main
+from boss_redfish_cli import main
 
 
 if __name__ == "__main__":

@@ -84,6 +84,21 @@ class ClientHelpersTests(unittest.TestCase):
             normalize_base_url("https://192.0.2.10/"),
             "https://192.0.2.10",
         )
+        # Test converting HTTP to HTTPS for remote URLs
+        self.assertEqual(
+            normalize_base_url("http://192.168.0.133/boss/"),
+            "https://192.168.0.133",
+        )
+        # Test keeping HTTP for local URLs
+        self.assertEqual(
+            normalize_base_url("http://127.0.0.1:8080/boss/redfish"),
+            "http://127.0.0.1:8080",
+        )
+        # Test stripping /boss/redfish/v1
+        self.assertEqual(
+            normalize_base_url("http://192.168.0.133/boss/redfish/v1"),
+            "https://192.168.0.133",
+        )
 
     def test_build_reading_summary_formats_boolean_defrost(self):
         readings = {
