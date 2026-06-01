@@ -201,5 +201,100 @@ class RedfishClientTests(unittest.TestCase):
         self.assertEqual(readings["CompCap"]["Reading"], 45)
 
 
+class SessionLifecycleHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    sessions_issued = 0
+    active_token: str | None = None
+    deleted_sessions: list = []
+
+    def _send(self, status, body=b"", headers=None):
+        self.send_response(status)
+        self.send_header("Content-Length", str(len(body)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_POST(self):
+        if self.path != "/redfish/v1/SessionService/Sessions":
+            self._send(404)
+            return
+        length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(length)
+        type(self).sessions_issued += 1
+        idx = type(self).sessions_issued
+        token = f"token-{idx}"
+        type(self).active_token = token
+        body = json.dumps({"Id": str(idx)}).encode("utf-8")
+        self._send(
+            201,
+            body,
+            {
+                "Content-Type": "application/json",
+                "X-Auth-Token": token,
+                "Location": f"/redfish/v1/SessionService/Sessions/{idx}",
+            },
+        )
+
+    def do_GET(self):
+        if self.headers.get("X-Auth-Token") != type(self).active_token:
+            self._send(401, b'{"error":"unauth"}', {"Content-Type": "application/json"})
+            return
+        self._send(200, b'{"Reading": 7.7}', {"Content-Type": "application/json"})
+
+    def do_DELETE(self):
+        type(self).deleted_sessions.append(self.path)
+        self._send(204)
+
+    def log_message(self, *_args):
+        return
+
+
+class SessionLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        SessionLifecycleHandler.sessions_issued = 0
+        SessionLifecycleHandler.active_token = None
+        SessionLifecycleHandler.deleted_sessions = []
+        self.server = HTTPServer(("127.0.0.1", 0), SessionLifecycleHandler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        host, port = self.server.server_address
+        self.base_url = f"http://{host}:{port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+
+    def test_request_retries_transparently_when_session_expires(self):
+        client = RedfishClient(
+            base_url=self.base_url,
+            username="admin",
+            password="x",
+            verify_tls=True,
+        )
+        client.login()
+        # Simulate BOSS rotating the session (e.g. Redfish service restarted).
+        SessionLifecycleHandler.active_token = "server-side-rotated"
+        result = client.get_json("/redfish/v1/Chassis/x/Sensors/y")
+        self.assertEqual(result["Reading"], 7.7)
+        self.assertEqual(SessionLifecycleHandler.sessions_issued, 2)
+
+    def test_context_manager_deletes_session_on_exit(self):
+        with RedfishClient(
+            base_url=self.base_url,
+            username="admin",
+            password="x",
+            verify_tls=True,
+        ) as client:
+            client.login()
+            session_uri = client._session_uri
+        self.assertIn(session_uri, SessionLifecycleHandler.deleted_sessions)
+        self.assertIsNone(client.token)
+        self.assertIsNone(client._session_uri)
+
+
 if __name__ == "__main__":
     unittest.main()
